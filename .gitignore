@@ -21,3 +21,7 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+# Python artifacts
+__pycache__/
+*.py[cod]
+rag_agent/memory/memory_store.json

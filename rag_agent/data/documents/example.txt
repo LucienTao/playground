@@ -1,0 +1,2 @@
+RAG（Retrieval-Augmented Generation）是一种结合检索和生成的技术。
+它通过在生成答案前检索外部知识来提升准确性。

@@ -20,13 +20,13 @@ class MemoryChunk:
     content: str
     topic: str
 
-
 class MemoryStore:
     """Persist memories to a JSON file and allow vector similarity search."""
 
     def __init__(self, path: Path, dim: int = 128) -> None:
         self.path = path
         self.dim = dim
+
         if path.exists():
             with path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -38,9 +38,11 @@ class MemoryStore:
             vecs = [hash_embedding(m.summary, dim) for m in self.memories]
             self.index.add(vecs)
 
+
     # ------------------------------------------------------------------
     def add_memory(self, summary: str, content: str, topic: str) -> MemoryChunk:
         chunk_id = f"chunk-{int(time.time())}-{len(self.memories)+1:03d}"
+
         chunk = MemoryChunk(
             id=chunk_id,
             timestamp=time.time(),
@@ -50,6 +52,7 @@ class MemoryStore:
         )
         vec = hash_embedding(summary, self.dim)
         self.index.add([vec])
+
         self.memories.append(chunk)
         self.save()
         return chunk
@@ -66,6 +69,7 @@ class MemoryStore:
                 continue
             results.append(self.memories[int(i)])
         return results
+
 
     # ------------------------------------------------------------------
     def save(self) -> None:

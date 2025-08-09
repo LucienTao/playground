@@ -1,16 +1,12 @@
 """Detect whether a dialogue context has switched topics."""
 
 from __future__ import annotations
-
-from ..memory.memory_store import _tokenize, _jaccard
-
+from ..utils.text import tokenize, jaccard
 
 def is_context_switch(current: str, previous_summary: str, threshold: float) -> bool:
-    """Return ``True`` if similarity is below ``threshold``.
+    """Return ``True`` if similarity is below ``threshold``."""
+    current_tokens = tokenize(current)
+    prev_tokens = tokenize(previous_summary)
+    sim = jaccard(current_tokens, prev_tokens)
 
-    Similarity is computed using Jaccard similarity of token sets.
-    """
-    current_tokens = _tokenize(current)
-    prev_tokens = _tokenize(previous_summary)
-    sim = _jaccard(current_tokens, prev_tokens)
     return sim < threshold

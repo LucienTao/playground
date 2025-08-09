@@ -1,32 +1,15 @@
-"""Simple JSON-based memory store for the agent.
-
-The store keeps a list of conversation "memory chunks" each containing a
-summary, the original content and a naive bag-of-words embedding.  This is
-sufficient for demonstrating retrieval and context switch detection without
-requiring heavy ML dependencies.
-"""
+"""Memory store backed by a FAISS index."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List, Iterable
 import json
 import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List
 
-
-def _tokenize(text: str) -> List[str]:
-    """Return a list of lowercase tokens (Chinese-aware)."""
-    import re
-    tokens = re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z]+", text)
-    return [t.lower() for t in tokens]
-
-
-def _jaccard(a: Iterable[str], b: Iterable[str]) -> float:
-    sa, sb = set(a), set(b)
-    if not sa and not sb:
-        return 1.0
-    return len(sa & sb) / len(sa | sb)
+from ..utils.text import hash_embedding
+from ..utils.faiss_utils import faiss
 
 
 @dataclass
@@ -36,45 +19,57 @@ class MemoryChunk:
     summary: str
     content: str
     topic: str
-    embedding: List[str] = field(default_factory=list)
-
 
 class MemoryStore:
-    """Persist memories to a JSON file and allow simple similarity search."""
+    """Persist memories to a JSON file and allow vector similarity search."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, dim: int = 128) -> None:
         self.path = path
+        self.dim = dim
+
         if path.exists():
             with path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             self.memories: List[MemoryChunk] = [MemoryChunk(**m) for m in data]
         else:
             self.memories = []
+        self.index = faiss.IndexFlatIP(dim)
+        if self.memories:
+            vecs = [hash_embedding(m.summary, dim) for m in self.memories]
+            self.index.add(vecs)
+
 
     # ------------------------------------------------------------------
     def add_memory(self, summary: str, content: str, topic: str) -> MemoryChunk:
         chunk_id = f"chunk-{int(time.time())}-{len(self.memories)+1:03d}"
-        embedding = _tokenize(summary)
+
         chunk = MemoryChunk(
             id=chunk_id,
             timestamp=time.time(),
             summary=summary,
             content=content,
             topic=topic,
-            embedding=embedding,
         )
+        vec = hash_embedding(summary, self.dim)
+        self.index.add([vec])
+
         self.memories.append(chunk)
         self.save()
         return chunk
 
     # ------------------------------------------------------------------
     def retrieve(self, query: str, top_k: int = 3) -> List[MemoryChunk]:
-        tokens = _tokenize(query)
-        scored = [
-            ( _jaccard(tokens, m.embedding), m) for m in self.memories
-        ]
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [m for score, m in scored[:top_k] if score > 0]
+        if not self.memories:
+            return []
+        qvec = hash_embedding(query, self.dim)
+        scores, idx = self.index.search([qvec], top_k)
+        results: List[MemoryChunk] = []
+        for score, i in zip(scores[0], idx[0]):
+            if i < 0 or score <= 0:
+                continue
+            results.append(self.memories[int(i)])
+        return results
+
 
     # ------------------------------------------------------------------
     def save(self) -> None:

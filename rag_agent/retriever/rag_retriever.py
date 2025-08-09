@@ -1,25 +1,37 @@
-"""Simple document retriever used for RAG."""
+"""Document retriever using a FAISS index."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
-from ..memory.memory_store import _tokenize, _jaccard
+from ..utils.text import hash_embedding
+from ..utils.faiss_utils import faiss
 
 
 class DocumentRetriever:
-    """Load plain text documents and return the most similar ones."""
+    """Load plain text documents and return similar ones via vector search."""
 
-    def __init__(self, documents_dir: Path) -> None:
-        self.docs: List[Tuple[str, List[str]]] = []
+    def __init__(self, documents_dir: Path, dim: int = 128) -> None:
+        self.dim = dim
+        self.docs: List[str] = []
+        embeddings: List[List[float]] = []
         for path in documents_dir.glob("*.txt"):
             text = path.read_text(encoding="utf-8")
-            tokens = _tokenize(text)
-            self.docs.append((text, tokens))
+            self.docs.append(text)
+            embeddings.append(hash_embedding(text, dim))
+        self.index = faiss.IndexFlatIP(dim)
+        if embeddings:
+            self.index.add(embeddings)
 
     def retrieve(self, query: str, top_k: int = 3) -> List[str]:
-        tokens = _tokenize(query)
-        scored = [(_jaccard(tokens, doc_tokens), text) for text, doc_tokens in self.docs]
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [text for score, text in scored[:top_k] if score > 0]
+        if not self.docs:
+            return []
+        qvec = hash_embedding(query, self.dim)
+        scores, idx = self.index.search([qvec], top_k)
+        results: List[str] = []
+        for score, i in zip(scores[0], idx[0]):
+            if i < 0 or score <= 0:
+                continue
+            results.append(self.docs[int(i)])
+        return results
